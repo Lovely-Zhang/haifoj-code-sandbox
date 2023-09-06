@@ -25,8 +25,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-public class JavaDockerCodeSandbox extends JavaNativeCodeSandboxTemplate {
+public class JavaDockerCodeSandboxOld implements CodeSandbox {
 
+    /**
+     * 临时文件名
+     */
+    private static final String GLOBAL_CODE_DIR_NAME = "temp";
 
     /**
      * 要执行的类名
@@ -38,13 +42,33 @@ public class JavaDockerCodeSandbox extends JavaNativeCodeSandboxTemplate {
      */
     private static final Long TIME_OUT = 5000L;
 
+    /**
+     * 黑名单
+     */
+    private static final List<String> blackList = Arrays.asList("Files", "exec", "sleep", "while");
+
+    /**
+     * 字典树
+     */
+    private static final WordTree WORD_TREE;
+
+    /**
+     * 首次拉取镜像
+     */
+    public static final Boolean FIRST_INIT = false;
+
+    static {
+        // 初始化字典树
+        WORD_TREE = new WordTree();
+        WORD_TREE.addWords(blackList);
+    }
 
 
     /**
      * 测试创建文件夹，获取用户输入的代码
      */
     public static void main(String[] args) {
-        JavaDockerCodeSandbox javaNativeCodeSandbox = new JavaDockerCodeSandbox();
+        JavaDockerCodeSandboxOld javaNativeCodeSandbox = new JavaDockerCodeSandboxOld();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
         String code = ResourceUtil.readStr("testCode/simpleComputeArgs" + File.separator + GLOBAL_JAVA_CLASS_NAME, StandardCharsets.UTF_8);
 //        String code = ResourceUtil.readStr("testCode/unsafe/ReadFileError.java", StandardCharsets.UTF_8);
@@ -57,13 +81,99 @@ public class JavaDockerCodeSandbox extends JavaNativeCodeSandboxTemplate {
     }
 
 
+    /**
+     * 1. 核心依赖：Java 进程类 Process
+     * 2. 编译代码，得到 class 文件
+     * 3. 执行代码，得到输出结果
+     * 4. 收集整理输出结果
+     * 5. 文件清理，释放空间
+     * 6. 错误处理，提升程序健壮性
+     */
     @Override
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputList) {
-        // 获取主机路径
-        String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
+    public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
+        String code = executeCodeRequest.getCode();
+        String language = executeCodeRequest.getLanguage();
+        List<String> inputList = executeCodeRequest.getInputList();
+
+        // 权限管理，
+//        System.setSecurityManager(new DenySecurityManager());
+
+        // 使用字典树，校验代码中是否包含敏感词汇
+        FoundWord foundWord = WORD_TREE.matchWord(code);
+        // 判断是否包含敏感词汇
+        if (foundWord != null) {
+            System.out.println("此代码包含黑名单词汇：" + foundWord.getFoundWord());
+            return null;
+        }
+
+
+        // 获取当前用户的工作目录，也就是当前项目的根目录
+        String userDir = System.getProperty("user.dir");
+        // 每个操作系统的分隔符都是不一样的 使用 File.separator，无论在哪个系统运行，都能正确地创建文件
+        String globalCodePathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME;
+        // 判断当前目录是否存在，没有则新建
+        if (!FileUtil.exist(globalCodePathName)) {
+            FileUtil.mkdir(globalCodePathName);
+        }
+
+        // 把用户的代码隔离存放
+        String userCodeParentPath = globalCodePathName + File.separator + UUID.randomUUID();
+        // 代码编译后的路径(加类名)
+        String userCodePath = userCodeParentPath + File.separator + GLOBAL_JAVA_CLASS_NAME;
+        ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
+        switch (language) {
+            case "java":
+                // 返回编译后的 class 文件路径
+                executeCodeResponse = getCodeFilePath(code, inputList, userCodePath, userCodeParentPath);
+                break;
+            case "C++":
+                System.out.println("输出了C++代码");
+                break;
+            default:
+                throw new RuntimeException("编程语言错误");
+        }
+        return executeCodeResponse;
+    }
+
+    private static ExecuteCodeResponse getCodeFilePath(String code, List<String> inputList, String userCodePath, String userCodeParentPath) {
+        // 2. 编译代码，得到 class 文件
+        // 在 userCodePath 文件中，写入用户代码字符串，设置路径，设置文件字符集
+        File userCodeFile = FileUtil.writeString(code, userCodePath, StandardCharsets.UTF_8);
+        // 拼接要输入的命令，占位符方法为获取文件的完整路径无论是相对路径还是绝对路径
+        String compileCmd = String.format("javac -encoding utf-8 %s", userCodeFile.getAbsolutePath());
+        try {
+            // 使用 Process 类在终端执行命令
+            Process compileProcess = Runtime.getRuntime().exec(compileCmd);
+            ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(compileProcess, "编译");
+            System.out.println("executeMessage = " + executeMessage);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
         // 获取默认的 docker client
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
+
+        // 下载镜像，jdk轻量版本
         String image = "openjdk:8-alpine";
+        if (FIRST_INIT) {
+            PullImageCmd pullImageCmd = dockerClient.pullImageCmd(image);
+            PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
+                /**
+                 * 每下载一次就会触发一次方法
+                 */
+                @Override
+                public void onNext(PullResponseItem item) {
+                    System.out.println("下镜像执行状态：" + item.getStatus());
+                    super.onNext(item);
+                }
+            };
+            try {
+                pullImageCmd.exec(pullImageResultCallback)
+                        .awaitCompletion();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            System.out.println("下载完成！");
+        }
         // 创建容器
         CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
         // 配置容器的 主机配置
@@ -189,8 +299,7 @@ public class JavaDockerCodeSandbox extends JavaNativeCodeSandboxTemplate {
                         .exec(execStartResultCallback)
                         // TIME_OUT, 最长执行时间，接着往下走不会抛异常，参数二：单位
                         // todo 实际运行会造成输出结果为空，记得先暂时去除
-                        // TIME_OUT, TimeUnit.MICROSECONDS
-                        .awaitCompletion();
+                        .awaitCompletion(TIME_OUT, TimeUnit.MICROSECONDS);
                 stopWatch.stop();
                 // 关闭
                 statsCmd.close();
@@ -205,6 +314,50 @@ public class JavaDockerCodeSandbox extends JavaNativeCodeSandboxTemplate {
             // 添加进程执行信息
             executeMessageList.add(executeMessage);
         }
-        return executeMessageList;
+
+        // 4. 封装结果，收集整理输出结果
+        ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
+        List<String> outputList = new ArrayList<>();
+        // 取用时最大值，便于判断是否超时
+        long maxTime = 0;
+        long maxMemory = 0;
+        for (ExecuteMessage executeMessage : executeMessageList) {
+            String errorMessage = executeMessage.getErrorMessage();
+            if (StrUtil.isNotBlank(errorMessage)) {
+                // 答案错误
+                executeCodeResponse.setMessage(errorMessage);
+                executeCodeResponse.setStatus(3);
+                break;
+            }
+            outputList.add(executeMessage.getMessage());
+            // 时间
+            Long time = executeMessage.getTime();
+            if (time != null) {
+                maxTime = Math.max(maxTime, time);
+            }
+            // 内存
+            Long memory = executeMessage.getMemory();
+            if (memory != null) {
+                maxMemory = Math.max(maxMemory, memory);
+            }
+        }
+        // 正常运行完成
+        if (executeMessageList.size() == outputList.size()) {
+            executeCodeResponse.setMessage("成功");
+            executeCodeResponse.setStatus(1);
+        }
+        executeCodeResponse.setOutputList(outputList);
+        JudgeInfo judgeInfo = new JudgeInfo();
+        // 获取执行信息，内存占用，时间占用，
+        judgeInfo.setMemory(maxMemory);
+        judgeInfo.setTime(maxTime);
+        executeCodeResponse.setJudgeInfo(judgeInfo);
+
+        // 5、文件清理
+        if (userCodeFile != null) {
+            boolean del = FileUtil.del(userCodeFile);
+            System.out.println("文件清理" + (del ? "成功" : "失败"));
+        }
+        return executeCodeResponse;
     }
 }

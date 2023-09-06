@@ -2,9 +2,12 @@ package com.haifoj.haifojcodesandbox.utils;
 
 import cn.hutool.core.util.StrUtil;
 import com.haifoj.haifojcodesandbox.model.ExecuteMessage;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.StopWatch;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 进程工具类
@@ -25,44 +28,46 @@ public class ProcessUtils {
             // 调用waitFor()方法等待该进程完成，并返回该进程的退出值，返回值为整数：0 为正常退出
             int exitValue = compilOrRunProcess.waitFor();
             executeMessage.setExitValue(exitValue);
+            // 使用InputStreamReader将compileProcess的输入流转换为字符流，并将其传递给BufferedReader构造函数，以创建一个缓冲字符输入流。
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(compilOrRunProcess.getInputStream()));
             // 正常退出
             if (exitValue == 0) {
                 System.out.println(opName + "成功！退出码为：" + exitValue);
                 // 获取程序的控制台输出结果
-                // 使用InputStreamReader将compileProcess的输入流转换为字符流，并将其传递给BufferedReader构造函数，以创建一个缓冲字符输入流。
-                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(compilOrRunProcess.getInputStream()));
-                // 通过 StringBuilder 拼接返回结果信息
-                StringBuilder compileOutputStringBuilder = new StringBuilder();
+//                // 通过 StringBuilder 拼接返回结果信息
+//                StringBuilder compileOutputStringBuilder = new StringBuilder();
+                List<String> outputStrList = new ArrayList<>();
                 // 循环，逐行读取控制台的输出
                 // 注意：这里读取行时，需要重新赋值进行判断，方便拿到输出结果，
                 // 执行bufferedReader.readLine()时会获取第一行的输出结果，这时指针便已经指向了第二行，
                 // 在循环内再次使用 bufferedReader.readLine() 就会跳过一行数据，从而导致丢失数据
                 String compileOutputLine;
                 while ((compileOutputLine = bufferedReader.readLine()) != null) {
-                    compileOutputStringBuilder.append(compileOutputLine).append("\n");
+//                    compileOutputStringBuilder.append(compileOutputLine).append("\n");
+                    outputStrList.add(compileOutputLine);
                 }
-                executeMessage.setMessage(compileOutputStringBuilder.toString());
+//                executeMessage.setMessage(compileOutputStringBuilder.toString());
+                // 拼接
+                executeMessage.setMessage(StringUtils.join(outputStrList, "\n"));
             } else {
                 // 异常退出
                 System.out.println(opName + "失败...退出码为：" + exitValue);
-                // 分批获取进程的正常输出
-                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(compilOrRunProcess.getInputStream()));
-                StringBuilder compileOutputStringBuilder = new StringBuilder();
+                List<String> compileOutputStrList = new ArrayList<>();
                 // 逐行读取
                 String compileOutputLine;
                 while ((compileOutputLine = bufferedReader.readLine()) != null) {
-                    compileOutputStringBuilder.append(compileOutputLine).append("\n");
+                    compileOutputStrList.add(compileOutputLine);
                 }
-                executeMessage.setMessage(compileOutputStringBuilder.toString());
+                executeMessage.setMessage(StringUtils.join(compileOutputStrList, "\n"));
                 // 通过标准错误流获取程序报错信息
                 BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(compilOrRunProcess.getErrorStream()));
-                StringBuilder errorCompileOutputStringBuilder = new StringBuilder();
+                List<String> errorCompileOutputStrList = new ArrayList<>();
                 // 循环，逐行读取控制台的输出
                 String errorComOutputLine;
                 while ((errorComOutputLine = errorBufferedReader.readLine()) != null) {
-                    errorCompileOutputStringBuilder.append(errorComOutputLine).append("\n");
+                    errorCompileOutputStrList.add(errorComOutputLine);
                 }
-                executeMessage.setErrorMessage(errorCompileOutputStringBuilder.toString());
+                executeMessage.setErrorMessage(StringUtils.join(errorCompileOutputStrList, "\n"));
             }
             stopWatch.stop();
             // 获取时间
