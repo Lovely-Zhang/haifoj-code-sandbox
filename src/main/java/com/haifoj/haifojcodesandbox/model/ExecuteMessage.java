@@ -28,4 +28,9 @@ public class ExecuteMessage {
      */
     private Long time;
 
+    /**
+     * 程序占用内存
+     */
+    private Long memory;
+
 }
