@@ -3,16 +3,14 @@ package com.haifoj.haifojcodesandbox.controller;
 import com.haifoj.haifojcodesandbox.JavaNativeCodeSandbox;
 import com.haifoj.haifojcodesandbox.model.ExecuteCodeRequest;
 import com.haifoj.haifojcodesandbox.model.ExecuteCodeResponse;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-@RestController("/test")
+@RestController
+@RequestMapping("test")
 public class TestController {
 
     /**

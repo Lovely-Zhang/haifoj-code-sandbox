@@ -200,12 +200,12 @@ public class JavaNativeCodeSandboxTemplate implements CodeSandbox {
         // 正常运行完成
         if (executeMessageList.size() == outputList.size()) {
             executeCodeResponse.setMessage("成功");
-            executeCodeResponse.setStatus(1);
+            executeCodeResponse.setStatus(2);
         }
         executeCodeResponse.setOutputList(outputList);
         JudgeInfo judgeInfo = new JudgeInfo();
-        // 要借助第三方库来获取内存占用，非常麻烦，此处不做实现
-        // judgeInfo.setMemory();
+        // 要借助第三方库来获取内存占用，非常麻烦，此处(给默认值为200)
+         judgeInfo.setMemory(200L);
         judgeInfo.setTime(maxTime);
         executeCodeResponse.setJudgeInfo(judgeInfo);
         return executeCodeResponse;
