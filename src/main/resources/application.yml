@@ -7,5 +7,6 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:8848
-#        server-addr: 8.134.24.194:8848
+        # Nacos服务的地址和端口 如果为 docker 容器启动的 nacos， 需要找到docker给 nacos 分配的容器 ip
+#        server-addr: localhost:8848
+         server-addr: 172.17.0.4:8848
